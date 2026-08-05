@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User root collection and subcollections restricted to owner
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /reports/{reportId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        match /downloads/{downloadId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+      }
+
+      match /evaluations/{evaluationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /savedScenarios/{scenarioId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /integrations/{integrationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /preferences/{prefId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /auditEvents/{eventId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Public benchmark scenarios read-only to all authenticated/unauthenticated users
+    match /publicBenchmarkScenarios/{scenarioId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

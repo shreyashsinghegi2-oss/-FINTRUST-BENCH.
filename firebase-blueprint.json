@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "Authenticated user profile and configuration",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "preferredLocale": { "type": "string" },
+        "preferredCountry": { "type": "string" },
+        "preferredCurrency": { "type": "string" },
+        "experienceMode": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "reports": {
+      "title": "User Personalized Reports",
+      "description": "FinTrustBench evaluation reports with identity-linked metadata",
+      "properties": {
+        "reportId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "reportDisplayName": { "type": "string" },
+        "reportType": { "type": "string" },
+        "verificationCode": { "type": "string" },
+        "reportHash": { "type": "string" },
+        "overallReliabilityScore": { "type": "number" },
+        "reliabilityLevel": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["reportId", "userUid", "reportType", "verificationCode", "reportHash"]
+    },
+    "evaluations": {
+      "title": "User Evaluations",
+      "description": "User specific benchmark evaluations",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "country": { "type": "string" },
+        "currency": { "type": "string" },
+        "topic": { "type": "string" },
+        "overallReliabilityScore": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profile document"
+    },
+    "/users/{userId}/reports/{reportId}": {
+      "schema": "reports",
+      "description": "User personalized and standard reports"
+    }
+  }
+}

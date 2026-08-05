@@ -1,0 +1,6 @@
+{
+  "name": "FinTrustBench",
+  "description": "A Global Benchmark for Trustworthy AI in Personal Financial Decision-Making",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
