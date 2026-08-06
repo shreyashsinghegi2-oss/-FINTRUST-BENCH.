@@ -7,7 +7,7 @@ import { createServer as createViteServer } from 'vite';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -262,7 +262,15 @@ Scoring criteria:
   }
 });
 
-async function startServer() {
+function configureProductionAssets() {
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
+async function startStandaloneServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -270,11 +278,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    configureProductionAssets();
   }
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -282,4 +286,12 @@ async function startServer() {
   });
 }
 
-startServer();
+// Vercel detects the default Express export and manages the HTTP listener.
+// Render and other traditional Node hosts run the standalone listener.
+if (process.env.VERCEL) {
+  configureProductionAssets();
+} else {
+  startStandaloneServer();
+}
+
+export default app;
