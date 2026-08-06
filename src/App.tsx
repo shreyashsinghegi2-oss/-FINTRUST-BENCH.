@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { LandingPage } from './components/LandingPage';
@@ -15,13 +15,20 @@ import { AuthModal } from './components/AuthModal';
 import { AIConnectionsPage } from './components/AIConnectionsPage';
 import { GoogleConnectionsPage } from './components/GoogleConnectionsPage';
 import { UserDashboardPage } from './components/UserDashboardPage';
-import { AppSettings, EvaluationResult, AIAnswerResponse, BenchmarkScenario, HistoryRecord } from './types';
+import { MandatoryAuthGate } from './components/MandatoryAuthGate';
+import { AppSettings, EvaluationResult, BenchmarkScenario } from './types';
 import { loadSettings, saveSettings, saveEvaluationToHistory, getStoredHistory } from './utils/storage';
 import { saveEvaluationToCloud } from './utils/cloudStorage';
 import { useAuth } from './context/AuthContext';
 
+function findButtonByText(text: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+    button.textContent?.includes(text),
+  );
+}
+
 export function App() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('landing');
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -30,6 +37,7 @@ export function App() {
   // Active evaluation data
   const [currentEvaluation, setCurrentEvaluation] = useState<EvaluationResult | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<BenchmarkScenario | null>(null);
+  const [scenarioRunNonce, setScenarioRunNonce] = useState<number>(0);
   const [historyKey, setHistoryKey] = useState<number>(0);
 
   const updateSettings = (newPartial: Partial<AppSettings>) => {
@@ -40,21 +48,61 @@ export function App() {
 
   const handleEvaluationComplete = (result: EvaluationResult) => {
     setCurrentEvaluation(result);
-    // Save locally
     saveEvaluationToHistory(result);
-    // If user is authenticated, save to Firestore
     if (user?.uid) {
       saveEvaluationToCloud(user.uid, result);
     }
     setHistoryKey((prev) => prev + 1);
-    // Switch view to Results Dashboard
     setActiveTab('results');
   };
 
   const handleRunScenario = (scenario: BenchmarkScenario) => {
-    setSelectedScenario(scenario);
+    // A new object and nonce guarantee that the same scenario can be run repeatedly.
+    setSelectedScenario({ ...scenario });
+    setScenarioRunNonce((value) => value + 1);
     setActiveTab('eval-lab');
   };
+
+  // Scenario cards are intended as one-click benchmark runs. The Evaluation Lab remains
+  // visible so users can inspect the loaded inputs, but both execution steps now run automatically.
+  useEffect(() => {
+    if (!selectedScenario || activeTab !== 'eval-lab' || scenarioRunNonce === 0) return;
+
+    let cancelled = false;
+    let evaluationPoll: number | undefined;
+
+    const startTimer = window.setTimeout(() => {
+      if (cancelled) return;
+
+      const generateButton = findButtonByText('Generate AI Answer');
+      if (!generateButton) return;
+
+      generateButton.click();
+
+      const startedAt = Date.now();
+      evaluationPoll = window.setInterval(() => {
+        if (cancelled) return;
+
+        const evaluateButton = findButtonByText('Run Reliability Evaluation');
+        if (evaluateButton && !evaluateButton.disabled) {
+          window.clearInterval(evaluationPoll);
+          evaluateButton.click();
+          return;
+        }
+
+        // Stop polling after two minutes so a provider error remains visible to the user.
+        if (Date.now() - startedAt > 120_000) {
+          window.clearInterval(evaluationPoll);
+        }
+      }, 300);
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startTimer);
+      if (evaluationPoll) window.clearInterval(evaluationPoll);
+    };
+  }, [activeTab, scenarioRunNonce, selectedScenario]);
 
   const handleOpenEvaluationFromHistory = (evalResult: EvaluationResult) => {
     setCurrentEvaluation(evalResult);
@@ -65,9 +113,23 @@ export function App() {
     setHistoryKey((prev) => prev + 1);
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="w-9 h-9 rounded-full border-2 border-slate-700 border-t-cyan-400 animate-spin mx-auto" />
+          <p className="text-sm text-slate-400">Checking secure session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <MandatoryAuthGate />;
+  }
+
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-500 selection:text-slate-950 ${settings.presentationMode ? 'presentation-mode' : ''}`}>
-      {/* Header */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -78,7 +140,6 @@ export function App() {
         hasActiveEvaluation={Boolean(currentEvaluation)}
       />
 
-      {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'landing' && (
           <LandingPage
@@ -99,6 +160,7 @@ export function App() {
 
         {activeTab === 'eval-lab' && (
           <EvaluationLab
+            key={`evaluation-lab-${scenarioRunNonce}`}
             settings={settings}
             initialScenario={selectedScenario}
             onEvaluationComplete={handleEvaluationComplete}
@@ -158,14 +220,11 @@ export function App() {
         )}
 
         {activeTab === 'methodology' && <MethodologyPage />}
-
         {activeTab === 'about' && <AboutPage settings={settings} />}
       </main>
 
-      {/* Footer */}
       <Footer setActiveTab={setActiveTab} settings={settings} />
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -173,7 +232,6 @@ export function App() {
         updateSettings={updateSettings}
       />
 
-      {/* Authentication Modal */}
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
