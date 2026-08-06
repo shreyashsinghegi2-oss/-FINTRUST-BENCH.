@@ -9,10 +9,10 @@ const HISTORY_KEY = 'fintrustbench_eval_history_v1';
 const SETTINGS_KEY = 'fintrustbench_app_settings_v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  demoMode: true,
+  demoMode: false,
   presentationMode: false,
   theme: 'light',
-  model: 'mistral-small-latest',
+  model: 'gemini-3.6-flash',
   temperatureAnswer: 0.4,
   temperatureEval: 0.1,
 };
@@ -68,6 +68,7 @@ export function saveEvaluationToHistory(evalResult: EvaluationResult): HistoryRe
       fullEvaluation: evalResult,
     };
 
+    // Unshift to place latest first
     const updated = [newRecord, ...history.filter((h) => h.id !== newRecord.id)].slice(0, 50);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
     return updated;
@@ -97,7 +98,11 @@ export function clearAllHistory(): HistoryRecord[] {
   }
 }
 
+/**
+ * Export evaluation or history to JSON
+ */
 export function exportToJSON(data: any, filename: string): void {
+  // SECURITY REQUIREMENT: Scrub any potential API key field before export
   const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
     if (key.toLowerCase().includes('apikey') || key.toLowerCase().includes('secret')) {
       return undefined;
@@ -116,6 +121,9 @@ export function exportToJSON(data: any, filename: string): void {
   downloadAnchor.remove();
 }
 
+/**
+ * Export history array to CSV file format
+ */
 export function exportHistoryToCSV(history: HistoryRecord[]): void {
   if (!history || history.length === 0) return;
 
