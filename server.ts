@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
+import firebaseConfigJson from './firebase-applet-config.json';
 
 dotenv.config();
 
@@ -9,6 +10,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 const MISTRAL_MODEL = process.env.MISTRAL_MODEL || 'mistral-small-latest';
+const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY?.trim() || firebaseConfigJson.apiKey;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -19,6 +21,14 @@ type MistralMessage = {
   content: string;
 };
 
+type AuthenticatedRequest = express.Request & {
+  firebaseUser?: {
+    localId: string;
+    email: string;
+    emailVerified: boolean;
+  };
+};
+
 class ProviderError extends Error {
   statusCode: number;
 
@@ -26,6 +36,49 @@ class ProviderError extends Error {
     super(message);
     this.name = 'ProviderError';
     this.statusCode = statusCode;
+  }
+}
+
+async function requireFirebaseAuth(
+  req: AuthenticatedRequest,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  const authorization = req.header('authorization') || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+
+  if (!token) {
+    res.status(401).json({ error: 'Firebase authentication is required.' });
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: token }),
+      },
+    );
+
+    const payload: any = await response.json().catch(() => ({}));
+    const firebaseUser = payload?.users?.[0];
+
+    if (!response.ok || !firebaseUser?.localId || !firebaseUser?.email) {
+      res.status(401).json({ error: 'Your Firebase session is invalid or expired. Please sign in again.' });
+      return;
+    }
+
+    req.firebaseUser = {
+      localId: firebaseUser.localId,
+      email: firebaseUser.email,
+      emailVerified: Boolean(firebaseUser.emailVerified),
+    };
+    next();
+  } catch (error) {
+    console.error('Firebase token verification failed:', error);
+    res.status(503).json({ error: 'Unable to verify the Firebase session. Please retry.' });
   }
 }
 
@@ -188,12 +241,13 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     provider: 'Mistral AI',
     hasApiKey: Boolean(process.env.MISTRAL_API_KEY),
+    firebaseAuthRequired: true,
     model: MISTRAL_MODEL,
     timestamp: new Date().toISOString(),
   });
 });
 
-app.post('/api/generate-answer', async (req, res) => {
+app.post('/api/generate-answer', requireFirebaseAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { country, currency, topic, difficulty, riskLevel, question, userContext } = req.body;
 
@@ -243,6 +297,7 @@ Return one valid JSON object with exactly these fields:
       success: true,
       provider: 'Mistral AI',
       model: MISTRAL_MODEL,
+      userId: req.firebaseUser?.localId,
       answer: parsed,
       rawText,
     });
@@ -252,7 +307,7 @@ Return one valid JSON object with exactly these fields:
   }
 });
 
-app.post('/api/evaluate-answer', async (req, res) => {
+app.post('/api/evaluate-answer', requireFirebaseAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { country, currency, topic, difficulty, riskLevel, question, userContext, aiAnswer } = req.body;
 
@@ -316,6 +371,7 @@ Use these score thresholds consistently: pass >= 80, warning 60-79, fail < 60. U
       success: true,
       provider: 'Mistral AI',
       model: MISTRAL_MODEL,
+      userId: req.firebaseUser?.localId,
       evaluation: parsed,
     });
   } catch (error) {
